@@ -366,7 +366,7 @@ static void KM_901U_Service(KINGMETER_t* KM_ctx)
 
     uint16_t CheckSum;
 
-    uint8_t  TxCnt;
+    static uint8_t  TxCnt;
     static uint8_t  Rx_message_length;
     static uint8_t  KM_Message[32];
 
@@ -470,6 +470,7 @@ static void KM_901U_Service(KINGMETER_t* KM_ctx)
     			    	        KM_ctx->Rx.CUR_Limit_mA                 = (KM_Message[8]&0x3F)*500;
 
     			    	        if(KM_ctx->Rx.CUR_Limit_mA==21500)autodetect();
+    			    	        if(KM_ctx->Rx.CUR_Limit_mA==20500)get_internal_temp_offset();
     			            		}
 
     			                // Prepare Tx message with handshake code
@@ -507,10 +508,10 @@ static void KM_901U_Service(KINGMETER_t* KM_ctx)
     			            default:
     			                TxCnt = 0;
     			        }
-     				TxCnt = 9;
+
 
     			        // Send prepared message
-    			        if(TxCnt != 0)
+    			        if(TxCnt && !CheckSum)
     			        {
     			            CheckSum = 0x0000;
 

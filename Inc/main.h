@@ -91,6 +91,18 @@
 //#define LEGALFLAG
 #define BATTERYVOLTAGE_MAX 53000
 #define R_TEMP_PULLUP 0
+#define INT_TEMP_25 2360
+#define USE_FIX_POSITIONS 0
+//Put values from the startup message after autodetect here, if you want to use fix positions. 32bit values for the hall angles!
+#define KV 80
+#define HALL_ORDER 1
+#define HALL_45 2636578816
+#define HALL_51 1896939520
+#define HALL_13 1157234688
+#define HALL_32 322109440
+#define HALL_26 4092133376
+#define HALL_64 3209232384
+
 
 /* ########################## Assert Selection ############################## */
 /**
@@ -114,6 +126,7 @@ extern uint32_t ui32_tim1_counter;
 extern uint32_t uint32_PAS_counter;
 extern uint8_t throttle_is_set(void);
 extern void UART_IdleItCallback(void);
+extern void get_internal_temp_offset(void);
 
 typedef struct
 {
@@ -151,6 +164,7 @@ typedef struct
 	uint8_t 		assist_level;
 	uint8_t 		regen_level;
 	int16_t         Temperature;
+	int16_t         int_Temperature;
 	int8_t         	system_state;
 	int8_t         	gear_state;
 	int8_t         	error_state;
@@ -176,7 +190,7 @@ typedef struct
 	uint8_t       	speedLimit;
 	uint8_t       	pulses_per_revolution;
 	uint16_t       	phase_current_max;
-	int16_t       	battery_current_max;
+	int32_t       	battery_current_max;
 
 
 }MotorParams_t;
