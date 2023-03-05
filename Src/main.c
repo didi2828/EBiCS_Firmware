@@ -42,6 +42,7 @@
 
 
 
+
 /* USER CODE BEGIN Includes */
 
 // Lishui BLCD FOC Open Source Firmware
@@ -56,7 +57,7 @@
 #include "eeprom.h"
 
 
-#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER)
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER|| DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
   #include "display_kingmeter.h"
 #endif
 
@@ -85,10 +86,11 @@ TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
-
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
 DMA_HandleTypeDef hdma_usart1_rx;
+
+IWDG_HandleTypeDef hiwdg;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
@@ -105,6 +107,8 @@ uint16_t ui16_throttle;
 uint16_t ui16_brake_adc;
 uint32_t ui32_throttle_cumulated;
 uint32_t ui32_brake_adc_cumulated;
+uint32_t ui32_int_Temp_cumulated = INT_TEMP_25<<5;
+int16_t i16_int_Temp_V25;
 uint16_t ui16_ph1_offset=0;
 uint16_t ui16_ph2_offset=0;
 uint16_t ui16_ph3_offset=0;
@@ -182,7 +186,7 @@ const uint8_t assist_profile[2][6]= {	{0,10,20,30,45,48},
 										{64,64,128,200,255,0}};
 
 uint16_t switchtime[3];
-volatile uint16_t adcData[8]; //Buffer for ADC1 Input
+volatile uint16_t adcData[9]; //Buffer for ADC1 Input
 q31_t tic_array[6];
 
 //Rotor angle scaled from degree to q31 for arm_math. -180Â°-->-2^31, 0Â°-->0, +180Â°-->+2^31
@@ -205,7 +209,8 @@ uint16_t VirtAddVarTab[NB_OF_VAR] = { 	EEPROM_POS_HALL_ORDER,
 		EEPROM_POS_HALL_13,
 		EEPROM_POS_HALL_32,
 		EEPROM_POS_HALL_26,
-		EEPROM_POS_HALL_64
+		EEPROM_POS_HALL_64,
+		EEPROM_INT_TEMP_V25
 	};
 
 enum state {Stop, SixStep, Regen, Running, BatteryCurrentLimit, Interpolation, PLL, IdleRun};
@@ -216,7 +221,7 @@ enum state SystemState;
 
 
 //variables for display communication
-#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER)
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER|| DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
 KINGMETER_t KM;
 #endif
 
@@ -261,13 +266,15 @@ static void MX_ADC2_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 int16_t T_NTC(uint16_t ADC);
-
+void init_watchdog(void);
+void MX_IWDG_Init(void);
+void get_internal_temp_offset(void);
 void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
                                 
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
-#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER)
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER|| DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
 void kingmeter_update(void);
 #endif
 
@@ -328,6 +335,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART1_UART_Init();
+
 
   //initialize MS struct.
   MS.hall_angle_detect_flag=1;
@@ -402,7 +410,7 @@ int main(void)
 
 
   //HAL_ADC_Start_IT(&hadc1);
-  HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)adcData, 7);
+  HAL_ADCEx_MultiModeStart_DMA(&hadc1, (uint32_t*)adcData, 8);
   HAL_ADC_Start_IT(&hadc2);
   MX_TIM1_Init(); //Hier die Reihenfolge getauscht!
   MX_TIM2_Init();
@@ -446,8 +454,9 @@ int main(void)
             }
 
 
-#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER)
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER || DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
        KingMeter_Init (&KM);
+
 #endif
 
 #if (DISPLAY_TYPE == DISPLAY_TYPE_BAFANG)
@@ -519,6 +528,7 @@ int main(void)
 
 #if (DISPLAY_TYPE == DISPLAY_TYPE_DEBUG)
    	printf_("phase current offsets:  %d, %d, %d \n ", ui16_ph1_offset, ui16_ph2_offset, ui16_ph3_offset);
+   	printf_("internal temperature raw reading:  %d, \n ", adcData[7]);
 #if (AUTODETECT == 1)
    	if(adcData[0]>VOLTAGE_MIN) autodetect();
    	else printf_("Battery voltage too low!:  %d,\n ",adcData[0]);
@@ -534,8 +544,11 @@ int main(void)
    	  	{
    	  	//do nothing (For Safety at switching on)
    	  	}
+   	//read internal temp calibration from emulated EEPROM
+   	EE_ReadVariable(EEPROM_INT_TEMP_V25, &i16_int_Temp_V25);
+   	if(!i16_int_Temp_V25)i16_int_Temp_V25=INT_TEMP_25; //use value from main.h, if not in EEPROM yet.
 
-#if (DISPLAY_TYPE != DISPLAY_TYPE_DEBUG || !AUTODETECT)
+#if (!USE_FIX_POSITIONS)
    	EE_ReadVariable(EEPROM_POS_HALL_ORDER, &i16_hall_order);
    	   	printf_("Hall_Order: %d \n",i16_hall_order);
    	   	// set varaiables to value from emulated EEPROM only if valid
@@ -545,26 +558,32 @@ int main(void)
    	   		EE_ReadVariable(EEPROM_POS_HALL_45, &temp);
    	   		Hall_45 = temp<<16;
    	   		printf_("Hall_45: %d \n",	(int16_t) (((Hall_45 >> 23) * 180) >> 8));
+   	   		printf_("Hall_45: %u \n",	Hall_45);
 
    	   		EE_ReadVariable(EEPROM_POS_HALL_51, &temp);
    	   		Hall_51 = temp<<16;
    	   		printf_("Hall_51: %d \n",	(int16_t) (((Hall_51 >> 23) * 180) >> 8));
+   	   		printf_("Hall_51: %u \n",	Hall_51);
 
    	   		EE_ReadVariable(EEPROM_POS_HALL_13, &temp);
    	   		Hall_13 = temp<<16;
    	   		printf_("Hall_13: %d \n",	(int16_t) (((Hall_13 >> 23) * 180) >> 8));
+   	   		printf_("Hall_13: %u \n",	Hall_13);
 
    	   		EE_ReadVariable(EEPROM_POS_HALL_32, &temp);
    	   		Hall_32 = temp<<16;
    	   		printf_("Hall_32: %d \n",	(int16_t) (((Hall_32 >> 23) * 180) >> 8));
+   	   		printf_("Hall_32: %u \n",	Hall_32);
 
    	   		EE_ReadVariable(EEPROM_POS_HALL_26, &temp);
    	   		Hall_26 = temp<<16;
    	   		printf_("Hall_26: %d \n",	(int16_t) (((Hall_26 >> 23) * 180) >> 8));
+   	   		printf_("Hall_26: %u \n",	Hall_26);
 
    	   		EE_ReadVariable(EEPROM_POS_HALL_64, &temp);
    	  		Hall_64 = temp<<16;
    	  		printf_("Hall_64: %d \n",	(int16_t) (((Hall_64 >> 23) * 180) >> 8));
+   	  		printf_("Hall_64: %u \n",	Hall_64);
 
    	  		EE_ReadVariable(EEPROM_POS_KV, &ui32_KV);
    	  		if(!ui32_KV)ui32_KV=111;
@@ -572,6 +591,15 @@ int main(void)
 
    	   	}
 
+#else
+   	 i16_hall_order = HALL_ORDER;
+   	 ui32_KV = KV;
+   	 Hall_45 = HALL_45;
+   	 Hall_51 = HALL_51;
+     Hall_13 = HALL_13;
+     Hall_32 = HALL_32;
+     Hall_26 = HALL_26;
+     Hall_64 = HALL_64;
 #endif
 
 
@@ -586,7 +614,7 @@ int main(void)
     CLEAR_BIT(TIM1->BDTR, TIM_BDTR_MOE);//Disable PWM
 
 	get_standstill_position();
-
+	init_watchdog();
 
   /* USER CODE END 2 */
 
@@ -594,14 +622,19 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	 HAL_IWDG_Refresh(&hiwdg);
+
+
 	 /* if(PI_flag){
 	  runPIcontrol();
 	  PI_flag=0;
 	  }*/
 	  //display message processing
 	  if(ui8_UART_flag){
-#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER)
-	  kingmeter_update();
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER||DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
+	  //kingmeter_update();
+
+	  KingMeter_Service(&KM);
 #endif
 
 
@@ -642,6 +675,8 @@ int main(void)
 
 	  //PAS signal processing
 	  if(ui8_PAS_flag){
+
+
 		  if(uint32_PAS_counter>100){ //debounce
 		  uint32_PAS_cumulated -= uint32_PAS_cumulated>>2;
 		  uint32_PAS_cumulated += uint32_PAS_counter;
@@ -670,7 +705,7 @@ int main(void)
 #else
 
 	  if(ui8_SPEED_flag){
-
+		 // HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 		  if(uint32_SPEED_counter>200){ //debounce
 			  MS.Speed = uint32_SPEED_counter;
 			  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
@@ -746,7 +781,7 @@ int main(void)
 				//next priority: undervoltage protection
 				else if(MS.Voltage<VOLTAGE_MIN)int32_temp_current_target=0;
 				//next priority: push assist
-				else if(ui8_Push_Assist_flag)int32_temp_current_target=PUSHASSIST_CURRENT;
+				else if(ui8_Push_Assist_flag)int32_temp_current_target=(MS.assist_level*PUSHASSIST_CURRENT)>>8; //does not work for BAFANG and Kunteng protocol actually
 				// last priority normal ride conditiones
 				else {
 
@@ -890,10 +925,17 @@ int main(void)
 					}
 				}
 //			else int32_temp_current_target=int32_temp_current_target;
-#else //legalflag
-				MS.i_q_setpoint=int32_temp_current_target;
+
 #endif //legalflag
+
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER || DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
+			if(KM.DirectSetpoint!=-1)int32_temp_current_target=(KM.DirectSetpoint*PH_CURRENT_MAX)>>7;
+#endif
 				MS.i_q_setpoint=map(MS.Temperature, 120,130,int32_temp_current_target,0); //ramp down power with temperature to avoid overheating the motor
+#if(INT_TEMP_25)
+				MS.i_q_setpoint=map(MS.int_Temperature, 70,80,MS.i_q_setpoint,0); //ramp down power with processor temperatur to avoid overheating the controller
+#endif
+
 				//auto KV detect
 			  if(ui8_KV_detect_flag){
 				  MS.i_q_setpoint=ui8_KV_detect_flag;
@@ -917,7 +959,7 @@ int main(void)
 
 //------------------------------------------------------------------------------------------------------------
 				//enable PWM if power is wanted
-	  if (MS.i_q_setpoint>0&&!READ_BIT(TIM1->BDTR, TIM_BDTR_MOE)){
+	  if (MS.i_q_setpoint&&!READ_BIT(TIM1->BDTR, TIM_BDTR_MOE)){
 
 		  uint16_half_rotation_counter=0;
 		  uint16_full_rotation_counter=0;
@@ -932,7 +974,7 @@ int main(void)
 		    }
 		  __HAL_TIM_SET_COUNTER(&htim2,0); //reset tim2 counter
 		  ui16_timertics=20000; //set interval between two hallevents to a large value
-		  i8_recent_rotor_direction=i8_direction*i8_reverse_flag;
+		  i8_recent_rotor_direction=i8_direction*i8_reverse_flag*sign(MS.i_q_setpoint);
 		  get_standstill_position();
 	  }
 
@@ -940,19 +982,9 @@ int main(void)
 //----------------------------------------------------------------------------------------------------------------------------------------------------------
 	  //slow loop procedere @16Hz, for LEV standard every 4th loop run, send page,
 	  if(ui32_tim3_counter>500){
+		  if(__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST)) HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+		 else HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
-
-		if(HAL_GPIO_ReadPin(LED_GPIO_Port, LED_Pin)){
-
-      	//HAL_GPIO_WritePin(LIGHT_GPIO_Port, LIGHT_Pin, GPIO_PIN_RESET);
-      	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
-      	//HAL_GPIO_WritePin(BRAKE_LIGHT_GPIO_Port, BRAKE_LIGHT_Pin, GPIO_PIN_RESET);
-		}
-		else{
-	      	//HAL_GPIO_WritePin(LIGHT_GPIO_Port, LIGHT_Pin, GPIO_PIN_SET);
-	      	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
-	      	//HAL_GPIO_WritePin(BRAKE_LIGHT_GPIO_Port, BRAKE_LIGHT_Pin, GPIO_PIN_SET);
-		}
 
 
 		  if(ui8_KV_detect_flag){ui16_KV_detect_counter++;}
@@ -961,9 +993,14 @@ int main(void)
 #else
 		  MS.Temperature=25;
 #endif
+		  //filter internal temperature reading
+		  ui32_int_Temp_cumulated-=ui32_int_Temp_cumulated>>5;
+		  ui32_int_Temp_cumulated+=adcData[7];
+		  MS.int_Temperature=(((i16_int_Temp_V25-(ui32_int_Temp_cumulated>>5))*24)>>7)+25;
+
 		  MS.Voltage=adcData[0];
-		  if(uint32_SPEED_counter>127999){
-			  MS.Speed =128000;
+		  if(uint32_SPEED_counter>32000){
+			  MS.Speed = 32000;
 #if (SPEEDSOURCE == EXTERNAL)
 			  uint32_SPEEDx100_cumulated=0;
 #endif
@@ -985,6 +1022,7 @@ int main(void)
 
 		  if((uint16_full_rotation_counter>7999||uint16_half_rotation_counter>7999)){
 			  SystemState = Stop;
+			  //HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 			  if(READ_BIT(TIM1->BDTR, TIM_BDTR_MOE)){
 			  CLEAR_BIT(TIM1->BDTR, TIM_BDTR_MOE); //Disable PWM if motor is not turning
 			  uint32_tics_filtered=1000000;
@@ -999,7 +1037,7 @@ int main(void)
 		  //print values for debugging
 
 
-		 sprintf_(buffer, "%d, %d, %d, %d, %d, %d, %d, %d, %d\r\n", adcData[1],MS.Temperature, ui32_KV, MS.i_q_setpoint, uint32_PAS, int32_temp_current_target , MS.u_d,MS.u_q, SystemState);
+		 sprintf_(buffer, "%d, %d, %d, %d, %d, %d, %d, %d, %d\r\n", adcData[7],MS.int_Temperature, i16_int_Temp_V25, MS.i_q_setpoint, uint32_PAS, int32_temp_current_target , MS.u_d,MS.u_q, SystemState);
 		 // sprintf_(buffer, "%d, %d, %d, %d, %d, %d, %d\r\n",(uint16_t)adcData[0],(uint16_t)adcData[1],(uint16_t)adcData[2],(uint16_t)adcData[3],(uint16_t)(adcData[4]),(uint16_t)(adcData[5]),(uint16_t)(adcData[6])) ;
 		 // sprintf_(buffer, "%d, %d, %d, %d, %d, %d\r\n",tic_array[0],tic_array[1],tic_array[2],tic_array[3],tic_array[4],tic_array[5]) ;
 		  i=0;
@@ -1130,7 +1168,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;// Trigger regular ADC with timer 3 ADC_EXTERNALTRIGCONV_T1_CC1;// // ADC_SOFTWARE_START; //
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 7;
+  hadc1.Init.NbrOfConversion = 8;
   hadc1.Init.NbrOfDiscConversion = 0;
 
 
@@ -1225,6 +1263,16 @@ _Error_Handler(__FILE__, __LINE__);
 */
 sConfig.Channel = ADC_CHANNEL_9; // connector AD1, temperature or torque input for Controller from PhoebeLiu @ aliexpress
 sConfig.Rank = ADC_REGULAR_RANK_7;
+sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;//ADC_SAMPLETIME_239CYCLES_5;
+if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+{
+_Error_Handler(__FILE__, __LINE__);
+}
+
+/**Configure Regular Channel
+*/
+sConfig.Channel = ADC_CHANNEL_TEMPSENSOR; // internal STM32 temperature sensor
+sConfig.Rank = ADC_REGULAR_RANK_8;
 sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;//ADC_SAMPLETIME_239CYCLES_5;
 if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
 {
@@ -1406,7 +1454,7 @@ static void MX_TIM2_Init(void)
 	  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
 	  sConfigIC.ICSelection = TIM_ICSELECTION_TRC;
 	  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-	  sConfigIC.ICFilter = 8;
+	  sConfigIC.ICFilter = 15;
 	  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
 	  {
 	    _Error_Handler(__FILE__, __LINE__);
@@ -1490,7 +1538,7 @@ static void MX_USART1_UART_Init(void)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
-
+  __HAL_UART_ENABLE_IT(&huart1, UART_IT_IDLE);
 }
 
 /** 
@@ -1505,14 +1553,14 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel1_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(DMA1_Channel1_IRQn);
-  /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-  /* DMA1_Channel5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+//  /* DMA1_Channel4_IRQn interrupt configuration */
+//  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 3, 0);
+//  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+//  /* DMA1_Channel5_IRQn interrupt configuration */
+//  //HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+//  //HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
 
 }
 
@@ -1586,9 +1634,10 @@ static void MX_GPIO_Init(void)
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
+	//HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 	if (htim == &htim3) {
 
-#ifdef SPEED_PLL
+#if SPEED_PLL
 		   if(!READ_BIT(TIM1->BDTR, TIM_BDTR_MOE))q31_rotorposition_PLL += (q31_angle_per_tic<<1);
 #endif
 
@@ -1602,6 +1651,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		if(uint16_half_rotation_counter<8000)uint16_half_rotation_counter++;	//half rotation counter for motor standstill detection
 
 	}
+	//HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 }
 
 
@@ -1610,6 +1660,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
 	ui8_adc_regular_flag=1;
+
 }
 
 //injected ADC
@@ -1712,7 +1763,7 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
 		} else {
 			ui8_overflow_flag = 1;
 			if(MS.KV_detect_flag)q31_rotorposition_absolute = q31_rotorposition_hall;
-			else q31_rotorposition_absolute = q31_rotorposition_hall+i8_direction*deg_30;//offset of 30 degree to get the middle of the sector
+			else q31_rotorposition_absolute = q31_rotorposition_hall+i8_direction*sign(MS.i_q_setpoint)*deg_30;//offset of 30 degree to get the middle of the sector
 			MS.system_state=SixStep;
 				//	}
 
@@ -1757,6 +1808,9 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 {
 	 //__HAL_TIM_SET_COUNTER(&htim2,0); //reset tim2 counter
+	//	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+
+		temp5=TIM3->CNT;
 
 		ui16_timertics = TIM2->CCR1;
 
@@ -1857,7 +1911,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 			q31_angle_per_tic = speed_PLL(q31_rotorposition_PLL,q31_rotorposition_hall,0);
 		}
 
-	#ifdef SPEED_PLL
+	#if SPEED_PLL
 		if(ui16_erps>30){   //360 interpolation at higher erps
 			if(ui8_hall_case==32||ui8_hall_case==23){
 				q31_angle_per_tic = speed_PLL(q31_rotorposition_PLL,q31_rotorposition_hall, SPDSHFT*tics_higher_limit/(uint32_tics_filtered>>3));
@@ -1871,13 +1925,14 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef* htim)
 
 	#endif
 
+	//	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 
 
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-
+	//HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 	//PAS processing
 	if(GPIO_Pin == PAS_EXTI8_Pin)
 	{
@@ -1891,10 +1946,16 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 			ui8_SPEED_flag = 1; //with debounce
 
 	}
-
+	//HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *UartHandle)
+{
+	//ui8_UART_flag=1;
+
+}
+
+void UART_IdleItCallback(void)
 {
 	ui8_UART_flag=1;
 
@@ -1924,9 +1985,23 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *UartHandle) {
 
 }
 
+void get_internal_temp_offset(void){
+	int32_t temp=0;
+    for(i=0;i<32;i++){
+    	while(!ui8_adc_regular_flag){}
+    	temp+=adcData[7];
+    	ui8_adc_regular_flag=0;
+    }
+		HAL_FLASH_Unlock();
+		EE_WriteVariable(EEPROM_INT_TEMP_V25,temp>>5);
+		HAL_FLASH_Lock();
+}
 
 
-#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER)
+
+
+
+#if (DISPLAY_TYPE & DISPLAY_TYPE_KINGMETER || DISPLAY_TYPE & DISPLAY_TYPE_DEBUG)
 void kingmeter_update(void)
 {
     /* Prepare Tx parameters */
@@ -1955,14 +2030,16 @@ void kingmeter_update(void)
     }
 
 #endif
-    if(MS.Temperature<130) KM.Tx.Error = KM_ERROR_NONE;
-    else KM.Tx.Error = KM_ERROR_OVHT;
+    if(MS.Temperature>130) KM.Tx.Error = KM_ERROR_OVHT;
+    else if(MS.int_Temperature>80)KM.Tx.Error = KM_ERROR_IOVHT;
+    else KM.Tx.Error = KM_ERROR_NONE;
+
 
     KM.Tx.Current_x10 = (uint16_t) (MS.Battery_Current/100); //MS.Battery_Current is in mA
 
 
     /* Receive Rx parameters/settings and send Tx parameters */
-    KingMeter_Service(&KM);
+   // KingMeter_Service(&KM);
 
 
     /* Apply Rx parameters */
@@ -1972,12 +2049,12 @@ void kingmeter_update(void)
     if(KM.Rx.Headlight == KM_HEADLIGHT_OFF)
         {
         	HAL_GPIO_WritePin(LIGHT_GPIO_Port, LIGHT_Pin, GPIO_PIN_RESET);
-        	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+
         }
         else // KM_HEADLIGHT_ON, KM_HEADLIGHT_LOW, KM_HEADLIGHT_HIGH
         {
         	HAL_GPIO_WritePin(LIGHT_GPIO_Port, LIGHT_Pin, GPIO_PIN_SET);
-        	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+
         }
 
 
@@ -2155,6 +2232,7 @@ void autodetect() {
 //	q31_t diffangle = 0;
 	HAL_Delay(5);
 	for (i = 0; i < 1080; i++) {
+		HAL_IWDG_Refresh(&hiwdg);
 		q31_rotorposition_absolute += 11930465; //drive motor in open loop with steps of 1 deg
 		HAL_Delay(5);
 		//printf_("%d, %d, %d, %d\n", temp3>>16,temp4>>16,temp5,temp6);
@@ -2287,15 +2365,15 @@ int32_t speed_to_tics (uint8_t speed){
 }
 
 int8_t tics_to_speed (uint32_t tics){
-	return WHEEL_CIRCUMFERENCE*5*3600/(6*GEAR_RATIO*tics*10);;
+	return WHEEL_CIRCUMFERENCE*5*3600/(6*GEAR_RATIO*tics*10);
 }
 
 int16_t internal_tics_to_speedx100 (uint32_t tics){
-	return WHEEL_CIRCUMFERENCE*50*3600/(6*GEAR_RATIO*tics);;
+	return WHEEL_CIRCUMFERENCE*50*3600/(6*GEAR_RATIO*tics);
 }
 
 int16_t external_tics_to_speedx100 (uint32_t tics){
-	return WHEEL_CIRCUMFERENCE*8*360/(PULSES_PER_REVOLUTION*tics);;
+	return WHEEL_CIRCUMFERENCE*8*360/(PULSES_PER_REVOLUTION*tics);
 }
 
 void runPIcontrol(){
@@ -2368,8 +2446,8 @@ q31_t speed_PLL (q31_t ist, q31_t soll, uint8_t speedadapt)
     q31_t q31_p;
     static q31_t q31_d_i = 0;
     static q31_t q31_d_dc = 0;
-    temp6 = soll-ist;
-    temp5 = speedadapt;
+   // temp6 = soll-ist;
+   // temp5 = speedadapt;
     q31_p=(soll - ist)>>(P_FACTOR_PLL-speedadapt);   				//7 for Shengyi middrive, 10 for BionX IGH3
     q31_d_i+=(soll - ist)>>(I_FACTOR_PLL-speedadapt);				//11 for Shengyi middrive, 10 for BionX IGH3
 
@@ -2404,7 +2482,48 @@ int16_t T_NTC(uint16_t ADC) // ADC 12 Bit, 10k Pullup, Rückgabewert in °C
 
 }
 #endif
+void init_watchdog(void)
+{
 
+    if(__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST))
+    {
+
+    	printf_("watchdog reset!\n");
+    	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+        // do not continue here if reset from watchdog
+        //while(1){}
+        //__HAL_RCC_CLEAR_RESET_FLAGS();
+    }
+    else
+    {
+    	HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+    	printf_("regular reset\n\n");
+
+    }
+    // start independent watchdog
+    MX_IWDG_Init();
+
+
+}
+
+/* IWDG init function */
+void MX_IWDG_Init(void)
+{
+  // RM0008 - Table 96 IWDG timout period in seconds:
+  // (IWDG_PRESCALER) * (Period + 1) / f_LSI
+  // datasheet STM32F103x4 -> f_LSI = 40'000 Hz ?!
+  //
+  // 32 * 1000 / 32000 = 1s
+  hiwdg.Instance = IWDG;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_32;
+  hiwdg.Init.Reload = 500;
+  // start the watchdog timer
+  if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
 /* USER CODE END 4 */
 
 /**
@@ -2419,6 +2538,7 @@ void _Error_Handler(char *file, int line)
   /* User can add his own implementation to report the HAL error return state */
   while(1)
   {
+	  CLEAR_BIT(TIM1->BDTR, TIM_BDTR_MOE); // Disable PWM in case of an error.
   }
   /* USER CODE END Error_Handler_Debug */
 }

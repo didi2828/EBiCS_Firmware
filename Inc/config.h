@@ -39,24 +39,24 @@
 #define I_FACTOR_SPEED 10
 #define TS_COEF 16000000
 #define PAS_TIMEOUT 8000
-#define RAMP_END 1600
+#define RAMP_END 1200
 #define THROTTLE_OFFSET 900
-#define THROTTLE_MAX 2800
+#define THROTTLE_MAX 2850
 #define WHEEL_CIRCUMFERENCE 2200
-#define GEAR_RATIO 11 //dummy for testing
+#define GEAR_RATIO 11 //11 for BionX IGH3
 #define SPEEDLIMIT 25
 #define PULSES_PER_REVOLUTION 1
 #define PH_CURRENT_MAX 600
-#define BATTERYCURRENT_MAX 10000
+#define BATTERYCURRENT_MAX 15000
 #define SPEC_ANGLE -167026406L //Value no longer needed
 //#define DIRDET
 #define FRAC_HIGH 30
 #define FRAC_LOW 15
-#define TS_MODE
+//#define TS_MODE
 //#define TQONAD1
 #define DISPLAY_TYPE DISPLAY_TYPE_DEBUG
 #define REVERSE 1
-#define PUSHASSIST_CURRENT 30
+#define PUSHASSIST_CURRENT 300
 #define VOLTAGE_MIN 300
 #define REGEN_CURRENT 200
 //#define FAST_LOOP_LOG
@@ -69,7 +69,7 @@
 
 #define P_FACTOR_PLL 10
 #define I_FACTOR_PLL 10
-#define AUTODETECT 1
+#define AUTODETECT 0
 #define SPEED_PLL 0 //1 for using PLL, 0 for angle extrapolation
 
 #define EXTERNAL 1
