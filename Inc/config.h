@@ -46,7 +46,7 @@
 #define GEAR_RATIO 72 //72 for Shengyi SX1, SX2
 #define SPEEDLIMIT 18
 #define PULSES_PER_REVOLUTION 1
-#define PH_CURRENT_MAX 600
+#define PH_CURRENT_MAX 1200
 #define BATTERYCURRENT_MAX 18000
 #define SPEC_ANGLE -167026406L //Value no longer needed
 //#define DIRDET
