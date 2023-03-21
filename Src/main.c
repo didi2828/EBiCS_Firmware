@@ -917,7 +917,7 @@ int main(void)
 				  //ramp down setpoint at speed limit
 #ifdef LEGALFLAG
 			if(!brake_flag){ //only ramp down if no regen active
-				if(uint32_PAS_counter<PAS_TIMEOUT){
+				if(1){
 					int32_temp_current_target=map(uint32_SPEEDx100_cumulated>>SPEEDFILTER, MP.speedLimit*100,(MP.speedLimit+2)*100,int32_temp_current_target,0);
 					}
 				else{ //limit to 6km/h if pedals are not turning
