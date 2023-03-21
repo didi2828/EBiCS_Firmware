@@ -88,9 +88,9 @@
 #define PAS_EXTI8_EXTI_IRQn EXTI9_5_IRQn
 
 //#define NCTE
-//#define LEGALFLAG
+#define LEGALFLAG
 #define BATTERYVOLTAGE_MAX 53000
-#define R_TEMP_PULLUP 0
+#define R_TEMP_PULLUP 10000
 #define INT_TEMP_25 0
 #define USE_FIX_POSITIONS 0
 //Put values from the startup message after autodetect here, if you want to use fix positions. 32bit values for the hall angles!
