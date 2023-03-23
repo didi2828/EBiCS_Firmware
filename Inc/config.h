@@ -72,8 +72,8 @@
 #define AUTODETECT 0
 #define SPEED_PLL 0 //1 for using PLL, 0 for angle extrapolation
 
-#define EXTERNAL 1
-#define INTERNAL 0
+#define EXTERNAL 0
+#define INTERNAL 1
 #define SPEEDSOURCE EXTERNAL
 #define SPEEDFILTER 1
 #define SIXSTEPTHRESHOLD 20000
