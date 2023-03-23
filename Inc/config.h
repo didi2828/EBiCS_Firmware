@@ -55,7 +55,7 @@
 //#define TS_MODE
 //#define TQONAD1
 #define DISPLAY_TYPE DISPLAY_TYPE_DEBUG
-#define REVERSE 0
+#define REVERSE -1
 #define PUSHASSIST_CURRENT 300
 #define VOLTAGE_MIN 300
 #define REGEN_CURRENT 200
