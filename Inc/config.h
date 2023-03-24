@@ -56,15 +56,15 @@
 //#define TQONAD1
 #define DISPLAY_TYPE DISPLAY_TYPE_DEBUG
 #define REVERSE -1
-#define PUSHASSIST_CURRENT 300
-#define VOLTAGE_MIN 300
+#define PUSHASSIST_CURRENT 300 //Current calculation 300 x 38 = 11400 mA
+#define VOLTAGE_MIN 1000      //Undervoltage calculation 1000 x 25= 25000 mV
 #define REGEN_CURRENT 200
 //#define FAST_LOOP_LOG
 //#define DISABLE_DYNAMIC_ADC
 //#define INDIVIDUAL_MODES
 //#define SPEEDTHROTTLE
 #define THROTTLE_OVERRIDE
-#define REGEN_CURRENT_MAX 10000
+#define REGEN_CURRENT_MAX 10000    //real value in mA
 
 
 #define P_FACTOR_PLL 10
