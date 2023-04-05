@@ -31,7 +31,7 @@
 #define BATTERY_LEVEL_3 344000
 #define BATTERY_LEVEL_4 368000
 #define BATTERY_LEVEL_5 380000
-#define P_FACTOR_I_Q 50
+#define P_FACTOR_I_Q 40 // Standard is 50
 #define I_FACTOR_I_Q 2
 #define P_FACTOR_I_D 50
 #define I_FACTOR_I_D 2
