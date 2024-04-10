@@ -42,7 +42,7 @@
 #define RAMP_END 1200
 #define THROTTLE_OFFSET 900
 #define THROTTLE_MAX 2850
-#define WHEEL_CIRCUMFERENCE 1640
+#define WHEEL_CIRCUMFERENCE 1650
 #define GEAR_RATIO 72 //72 for Shengyi SX1, SX2
 #define SPEEDLIMIT 14
 #define PULSES_PER_REVOLUTION 1
@@ -69,7 +69,7 @@
 
 #define P_FACTOR_PLL 10
 #define I_FACTOR_PLL 10
-#define AUTODETECT 0
+#define AUTODETECT 1
 #define SPEED_PLL 0 //1 for using PLL, 0 for angle extrapolation
 
 #define EXTERNAL 1
