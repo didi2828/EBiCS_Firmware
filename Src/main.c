@@ -105,7 +105,7 @@ uint8_t ui8_hall_state=0;
 uint8_t ui8_hall_state_old=0;
 uint8_t ui8_hall_case =0;
 uint16_t ui16_tim2_recent=0;
-uint16_t ui16_timertics=5000; 					//timertics between two hall events for 60Â° interpolation
+uint16_t ui16_timertics=5000; 					//timertics between two hall events for 60Ã‚Â° interpolation
 uint16_t ui16_throttle;
 uint16_t ui16_throttle_offset = THROTTLE_OFFSET;
 uint16_t ui16_brake_adc;
@@ -195,16 +195,16 @@ uint16_t switchtime[3];
 volatile uint16_t adcData[9]; //Buffer for ADC1 Input
 q31_t tic_array[6];
 
-//Rotor angle scaled from degree to q31 for arm_math. -180Â°-->-2^31, 0Â°-->0, +180Â°-->+2^31
+//Rotor angle scaled from degree to q31 for arm_math. -180Ã‚Â°-->-2^31, 0Ã‚Â°-->0, +180Ã‚Â°-->+2^31
 const q31_t deg_30 = 357913941;
-// angles for 120� setup
+// angles for 120° setup
 q31_t Hall_13 = 0;
 q31_t Hall_32 = 0;
 q31_t Hall_26 = 0;
 q31_t Hall_64 = 0;
 q31_t Hall_51 = 0;
 q31_t Hall_45 = 0;
-// angles for 60� setup
+// angles for 60° setup
 q31_t Hall_46 = 0;
 q31_t Hall_67 = 0;
 q31_t Hall_73 = 0;
@@ -728,9 +728,9 @@ int main(void)
 		if(ui8_PAS_flag){
 
 			if(uint32_PAS_counter>100){ //debounce
-				uint32_PAS_cumulated -= uint32_PAS_cumulated>>2;
+				uint32_PAS_cumulated -= uint32_PAS_cumulated>>1;
 				uint32_PAS_cumulated += uint32_PAS_counter;
-				uint32_PAS = uint32_PAS_cumulated>>2;
+				uint32_PAS = uint32_PAS_cumulated>>1;
 
 				uint32_PAS_HIGH_accumulated-=uint32_PAS_HIGH_accumulated>>2;
 				uint32_PAS_HIGH_accumulated+=uint32_PAS_HIGH_counter;
@@ -1227,7 +1227,7 @@ int main(void)
 		/**Common config
 		 */
 		hadc1.Instance = ADC1;
-		hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE; //Scan muÃ fÃ¼r getriggerte Wandlung gesetzt sein
+		hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE; //Scan muÃƒÂŸ fÃƒÂ¼r getriggerte Wandlung gesetzt sein
 		hadc1.Init.ContinuousConvMode = DISABLE;
 		hadc1.Init.DiscontinuousConvMode = DISABLE;
 		hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_TRGO;// Trigger regular ADC with timer 3 ADC_EXTERNALTRIGCONV_T1_CC1;// // ADC_SOFTWARE_START; //
@@ -1256,10 +1256,10 @@ int main(void)
 		sConfigInjected.InjectedNbrOfConversion = 1;
 		sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_1CYCLE_5;
 		sConfigInjected.ExternalTrigInjecConv = ADC_EXTERNALTRIGINJECCONV_T1_CC4; // Hier bin ich nicht sicher ob Trigger out oder direkt CC4
-		sConfigInjected.AutoInjectedConv = DISABLE; //muÃ aus sein
+		sConfigInjected.AutoInjectedConv = DISABLE; //muÃƒÂŸ aus sein
 		sConfigInjected.InjectedDiscontinuousConvMode = DISABLE;
 		sConfigInjected.InjectedOffset = ui16_ph1_offset;//1900;
-		HAL_ADC_Stop(&hadc1); //ADC muÃ gestoppt sein, damit Triggerquelle gesetzt werden kann.
+		HAL_ADC_Stop(&hadc1); //ADC muÃƒÂŸ gestoppt sein, damit Triggerquelle gesetzt werden kann.
 		if (HAL_ADCEx_InjectedConfigChannel(&hadc1, &sConfigInjected) != HAL_OK)
 		{
 			_Error_Handler(__FILE__, __LINE__);
@@ -1889,7 +1889,7 @@ int main(void)
 			ui8_hall_state_old=ui8_hall_state;
 		}
 #if (USE_FIX_POSITIONS)
-//Check for 60� hall configuration
+//Check for 60° hall configuration
 		if(ui8_hall_state==0)i16_60deg_Hall_flag |= 0b1;
 		if(ui8_hall_state==7)i16_60deg_Hall_flag |= 0b10;
 
@@ -1899,7 +1899,7 @@ int main(void)
 			Set_Hall_Logic();
 
 		}
-//Check for 120� hall configuration
+//Check for 120° hall configuration
 		if(ui8_hall_state==2)i16_60deg_Hall_flag |= 0b1000;
 		if(ui8_hall_state==5)i16_60deg_Hall_flag |= 0b10000;
 		if(i16_60deg_Hall_flag>>3==0b11){
@@ -2238,19 +2238,19 @@ int main(void)
 	//assuming, a proper AD conversion takes 350 timer tics, to be confirmed. DT+TR+TS deadtime + noise subsiding + sample time
 	void dyn_adc_state(q31_t angle){
 		if (switchtime[2]>switchtime[0] && switchtime[2]>switchtime[1]){
-			MS.char_dyn_adc_state = 1; // -90Â° .. +30Â°: Phase C at high dutycycles
+			MS.char_dyn_adc_state = 1; // -90Ã‚Â° .. +30Ã‚Â°: Phase C at high dutycycles
 			if(switchtime[2]>1500)TIM1->CCR4 =  switchtime[2]-TRIGGER_OFFSET_ADC;
 			else TIM1->CCR4 = TRIGGER_DEFAULT;
 		}
 
 		if (switchtime[0]>switchtime[1] && switchtime[0]>switchtime[2]) {
-			MS.char_dyn_adc_state = 2; // +30Â° .. 150Â° Phase A at high dutycycles
+			MS.char_dyn_adc_state = 2; // +30Ã‚Â° .. 150Ã‚Â° Phase A at high dutycycles
 			if(switchtime[0]>1500)TIM1->CCR4 =  switchtime[0]-TRIGGER_OFFSET_ADC;
 			else TIM1->CCR4 = TRIGGER_DEFAULT;
 		}
 
 		if (switchtime[1]>switchtime[0] && switchtime[1]>switchtime[2]){
-			MS.char_dyn_adc_state = 3; // +150 .. -90Â° Phase B at high dutycycles
+			MS.char_dyn_adc_state = 3; // +150 .. -90Ã‚Â° Phase B at high dutycycles
 			if(switchtime[1]>1500)TIM1->CCR4 =  switchtime[1]-TRIGGER_OFFSET_ADC;
 			else TIM1->CCR4 = TRIGGER_DEFAULT;
 		}
@@ -2712,7 +2712,7 @@ void Set_Hall_Angle60(void){
 
 
 #if (R_TEMP_PULLUP)
-	int16_t T_NTC(uint16_t ADC) // ADC 12 Bit, 10k Pullup, Rückgabewert in °C
+	int16_t T_NTC(uint16_t ADC) // ADC 12 Bit, 10k Pullup, RÃ¼ckgabewert in Â°C
 
 	{
 		uint16_t Ux1000 = 3300;
@@ -2725,8 +2725,8 @@ void Set_Hall_Angle60(void){
 		uint16_t n = 0;
 		while(R >> n > 1) n++;
 		R <<= 13;
-		for(n <<= 6; R >> (n >> 6) >> 13; n++) R -= (R >> 10)*11; // Annäherung 1-11/1024 für 2^(-1/64)
-		int16_t T6 = 2160580/(n+357)-1639; // Berechnung für 10 kOhm-NTC (bei 25 °C) mit beta=3900 K
+		for(n <<= 6; R >> (n >> 6) >> 13; n++) R -= (R >> 10)*11; // AnnÃ¤herung 1-11/1024 fÃ¼r 2^(-1/64)
+		int16_t T6 = 2160580/(n+357)-1639; // Berechnung fÃ¼r 10 kOhm-NTC (bei 25 Â°C) mit beta=3900 K
 		return (T6 > 0 ? T6+3 : T6-2)/6; // Rundung
 
 	}
