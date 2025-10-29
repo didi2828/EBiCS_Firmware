@@ -68,7 +68,7 @@
 #define FRAC_HIGH 30
 #define FRAC_LOW 15
 #define PAS_TIMEOUT 3000
-#define RAMP_END 1200
+#define RAMP_END 2500   // it was 1200
 #define PAS_IMP_PER_TURN 32
 
 //---------------------------------------------------------------------
