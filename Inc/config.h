@@ -79,8 +79,8 @@
 
 //--------------------------------------------------------------------
 //Speed settings
-#define WHEEL_CIRCUMFERENCE 2200
-#define GEAR_RATIO 11 //11 for BionX IGH3
+#define WHEEL_CIRCUMFERENCE 1329   // 1329 for Brompton 16"
+#define GEAR_RATIO 20  //11 for BionX IGH3  20 for SAW20
 #define SPEEDLIMIT 25
 #define PULSES_PER_REVOLUTION 1
 #define SPEEDSOURCE INTERNAL
