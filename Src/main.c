@@ -730,7 +730,7 @@ int main(void)
 			if(uint32_PAS_counter>100){ //debounce
 				uint32_PAS_cumulated -= uint32_PAS_cumulated>>1;
 				uint32_PAS_cumulated += uint32_PAS_counter;
-				uint32_PAS = uint32_PAS_cumulated>>1;
+				uint32_PAS = uint32_PAS_counter; //uint32_PAS_cumulated>>1;
 
 				uint32_PAS_HIGH_accumulated-=uint32_PAS_HIGH_accumulated>>2;
 				uint32_PAS_HIGH_accumulated+=uint32_PAS_HIGH_counter;
@@ -870,7 +870,10 @@ int main(void)
 #endif
 
 #if (DISPLAY_TYPE == DISPLAY_TYPE_KINGMETER_901U||DISPLAY_TYPE == DISPLAY_TYPE_NO2)
-				uint16_mapped_PAS = map(uint32_PAS, RAMP_END, PAS_TIMEOUT, ((PH_CURRENT_MAX*(int32_t)(MS.assist_level)))>>8, 0); // level in range 0...255
+				if(uint32_PAS < PAS_TIMEOUT){
+					uint16_mapped_PAS = map(uint32_PAS, RAMP_END, PAS_TIMEOUT, ((PH_CURRENT_MAX*(int32_t)(MS.assist_level)))>>8, ((PH_CURRENT_MAX*(int32_t)(MS.assist_level)))>>10); // level in range 0...255
+				}
+				else uint16_mapped_PAS = 0;
 #endif
 
 #if (DISPLAY_TYPE == DISPLAY_TYPE_DEBUG)
