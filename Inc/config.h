@@ -92,7 +92,7 @@
 #define PH_CURRENT_MAX 1200         // conversion factor for ADC value is 38 in mA 1200 x 38 = 45600 mA
 #define BATTERYCURRENT_MAX 15000    // real value in mA
 #define REVERSE 1 //1 for normal direction, -1 for reverse
-#define PUSHASSIST_CURRENT 650      // conversion factor for ADC value is 38 in mA 300 x 38 = 11400 mA
+#define PUSHASSIST_CURRENT 1200      // conversion factor for ADC value is 38 in mA 300 x 38 = 11400 mA
 #define VOLTAGE_MIN 1000            // conversion factor is 25 in mV  i.e. 1000 x 25 = 25000 mV
 
 //---------------------------------------------------------------------
